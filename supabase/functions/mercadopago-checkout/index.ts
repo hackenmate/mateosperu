@@ -14,10 +14,9 @@ Deno.serve(async(req)=>{
     const {data:order,error}=await supabase.from('orders').select('id,code,total,customer_name,email,payment_status,checkout_token').eq('id',orderId).eq('checkout_token',checkoutToken).maybeSingle();
     if(error||!order)return json({error:'Pedido inválido.'},404);
     if(order.payment_status==='Pagado')return json({error:'Este pedido ya fue pagado.'},409);
-    const {data:items}=await supabase.from('order_items').select('product_name,quantity,unit_price').eq('order_id',orderId);
     const siteUrl=Deno.env.get('SITE_URL')||'https://hackenmate.github.io/mateosperu/';
     const payload={
-      items:(items||[]).map((i:any)=>({title:i.product_name,quantity:Number(i.quantity),currency_id:'PEN',unit_price:Number(i.unit_price)})),
+      items:[{title:`Pedido Mateo’s ${order.code}`,quantity:1,currency_id:'PEN',unit_price:Number(order.total)}],
       payer:{name:order.customer_name,email:email||order.email||undefined},
       external_reference:order.code,
       back_urls:{success:`${siteUrl}?payment=success&order=${encodeURIComponent(order.code)}`,pending:`${siteUrl}?payment=pending&order=${encodeURIComponent(order.code)}`,failure:`${siteUrl}?payment=failure&order=${encodeURIComponent(order.code)}`},
