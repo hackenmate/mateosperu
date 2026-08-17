@@ -1,0 +1,4 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+html{scroll-behavior:smooth}body{margin:0;font-family:'DM Sans',sans-serif;background:#f4f2ed}.font-display{font-family:'Bebas Neue',sans-serif}.field{width:100%;border:1px solid rgb(0 0 0/.2);background:#fff;padding:.85rem 1rem;outline:none}.field:focus{border-color:#000}button,input,select,textarea{font:inherit}button{cursor:pointer}::selection{background:#c9ff36;color:#000}
