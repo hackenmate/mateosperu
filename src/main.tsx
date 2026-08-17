@@ -1,6 +1,17 @@
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { UserRound } from 'lucide-react';
 import App from './App';
+import AccountPanel from './AccountPanel';
 import './index.css';
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+function Root(){
+  const [accountOpen,setAccountOpen]=useState(false);
+  return <>
+    <App />
+    <button onClick={()=>setAccountOpen(true)} className="fixed bottom-5 right-5 z-[70] flex items-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-black uppercase text-white shadow-xl" aria-label="Abrir mi cuenta"><UserRound size={18}/> Mi cuenta</button>
+    <AccountPanel open={accountOpen} onClose={()=>setAccountOpen(false)}/>
+  </>;
+}
+
+createRoot(document.getElementById('root')!).render(<StrictMode><Root /></StrictMode>);
