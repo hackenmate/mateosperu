@@ -23,6 +23,7 @@ export type Product = {
   badge?: string | null;
   image: string;
   images: string[];
+  color_images?: Record<string,string[]>;
   active: boolean;
   sort_order: number;
   variants?: ProductVariant[];
