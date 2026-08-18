@@ -2,3 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 html{scroll-behavior:smooth}body{margin:0;font-family:'DM Sans',sans-serif;background:#f4f2ed}.font-display{font-family:'Bebas Neue',sans-serif}.field{width:100%;border:1px solid rgb(0 0 0/.2);background:#fff;padding:.85rem 1rem;outline:none}.field:focus{border-color:#000}button,input,select,textarea{font:inherit}button{cursor:pointer}::selection{background:#c9ff36;color:#000}
+/* Global floating actions must never cover product, cart, checkout, account or admin overlays. */
+.z-\[70\],.z-\[72\],.z-\[76\]{z-index:30!important}
+/* Prevent flex drawers from forcing their scrollable content underneath fixed-looking footers. */
+aside.flex.h-full{min-height:0}
+aside.flex.h-full>div.flex-1{min-height:0}
+@media(max-width:640px){
+  body{overflow-x:hidden}
+}
