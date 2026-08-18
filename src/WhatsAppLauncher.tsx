@@ -9,9 +9,9 @@ export default function WhatsAppLauncher(){
     href={href}
     target="_blank"
     rel="noopener noreferrer"
-    className="fixed bottom-20 right-5 z-[70] flex items-center gap-2 rounded-full bg-[#25D366] px-5 py-3 text-sm font-black uppercase text-black shadow-xl"
+    className="fixed bottom-20 right-5 z-[70] flex h-12 w-12 items-center justify-center rounded-full bg-[#25D366] text-black shadow-xl sm:h-auto sm:w-auto sm:gap-2 sm:px-5 sm:py-3 sm:text-sm sm:font-black sm:uppercase"
     aria-label="Consultar por WhatsApp"
   >
-    <MessageCircle size={18}/> WhatsApp
+    <MessageCircle size={20}/><span className="hidden sm:inline">WhatsApp</span>
   </a>;
 }
