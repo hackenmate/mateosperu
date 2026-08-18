@@ -6,20 +6,36 @@ html{scroll-behavior:smooth}body{margin:0;font-family:'DM Sans',sans-serif;backg
 /* Floating actions stay behind normal content and never cover a drawer/modal. */
 .z-\[70\],.z-\[72\],.z-\[76\]{z-index:30!important}
 
-/* Direct overlay detection for modern browsers (Chrome/Edge/Safari). */
-body:has(.fixed.inset-0:not(.pointer-events-none)) a[href^="https://wa.me/"][class*="fixed"],
-body:has(.fixed.inset-0:not(.pointer-events-none)) button[aria-label="Abrir mi cuenta"],
-body:has(.fixed.inset-0:not(.pointer-events-none)) button[class*="bottom-5"][class*="left-5"],
-body:has(.fixed.inset-0:not(.pointer-events-none)) .mateos-floating-action{
+/* Exact cart rule: when the cart aside is visibly open, remove every global floating action. */
+body:has(aside.translate-x-0) .mateos-floating-action,
+body:has(aside.translate-x-0) a[href^="https://wa.me/"][class*="fixed"],
+body:has(aside.translate-x-0) button[aria-label="Abrir mi cuenta"],
+body:has(aside.translate-x-0) button[class*="bottom-5"][class*="left-5"]{
   display:none!important;
+  visibility:hidden!important;
+  opacity:0!important;
+  pointer-events:none!important;
 }
 
-/* JS fallback kept for browsers without :has support. */
+/* Any other open full-screen overlay: product, checkout, account or administration. */
+body:has(.fixed.inset-0:not(.pointer-events-none)) .mateos-floating-action,
+body:has(.fixed.inset-0:not(.pointer-events-none)) a[href^="https://wa.me/"][class*="fixed"],
+body:has(.fixed.inset-0:not(.pointer-events-none)) button[aria-label="Abrir mi cuenta"]{
+  display:none!important;
+  visibility:hidden!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
+
+/* JS fallback. */
 body.mateos-overlay-open .mateos-floating-action,
 body.mateos-shop-overlay-open .mateos-floating-action,
 body.mateos-account-overlay-open .mateos-floating-action,
 body.mateos-tools-overlay-open .mateos-floating-action{
   display:none!important;
+  visibility:hidden!important;
+  opacity:0!important;
+  pointer-events:none!important;
 }
 
 /* Drawer layout: header/footer stay visible, only product list scrolls. */
