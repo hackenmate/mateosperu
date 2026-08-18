@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Heart, LogIn, LogOut, Package, Save, UserRound, X } from 'lucide-react';
-import { getSession, loadMyOrders, loadProfile, resetPassword, saveProfile, signInUser, signInWithGoogle, signOutUser, signUpUser } from './store';
+import { Heart, LogIn, LogOut, MailCheck, Package, Save, UserRound, X } from 'lucide-react';
+import { getSession, loadMyOrders, loadProfile, saveProfile, signInWithGoogle, signOutUser } from './store';
+import { resendSignupConfirmation, sendPasswordReset, signInCustomer, signUpCustomer } from './auth';
 import type { OrderRow, Profile } from './types';
 
 export default function AccountPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -13,11 +14,14 @@ export default function AccountPanel({ open, onClose }: { open: boolean; onClose
   const [profile, setProfile] = useState<Profile | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [msg, setMsg] = useState('');
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
     const current = await getSession();
     setSession(current);
     if (current) {
+      setNeedsConfirmation(false);
       setProfile(await loadProfile());
       setOrders(await loadMyOrders());
     }
@@ -30,27 +34,59 @@ export default function AccountPanel({ open, onClose }: { open: boolean; onClose
   if (!open) return null;
 
   const submit = async () => {
+    if (!email || !password || (mode === 'register' && !name)) {
+      setMsg('Completa los campos obligatorios.');
+      return;
+    }
+    setBusy(true);
     try {
       setMsg('');
-      if (mode === 'login') await signInUser(email, password);
-      else await signUpUser(email, password, name, phone);
-      await refresh();
-      setMsg(mode === 'register' ? 'Cuenta creada. Revisa tu correo si se requiere confirmación.' : 'Sesión iniciada.');
+      if (mode === 'login') {
+        await signInCustomer(email, password);
+        await refresh();
+        setMsg('Sesión iniciada.');
+      } else {
+        const data = await signUpCustomer(email, password, name, phone);
+        if (data.session) {
+          await refresh();
+          setMsg('Cuenta creada y sesión iniciada.');
+        } else {
+          setNeedsConfirmation(true);
+          setMode('login');
+          setMsg('Cuenta creada. Te enviamos un correo de confirmación. Ábrelo y luego vuelve a Mateo’s para iniciar sesión.');
+        }
+      }
+    } catch (e: any) {
+      const text = e?.message || 'No se pudo completar la operación.';
+      if (text.toLowerCase().includes('confirmado')) setNeedsConfirmation(true);
+      setMsg(text);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    setBusy(true);
+    try {
+      await resendSignupConfirmation(email);
+      setNeedsConfirmation(true);
+      setMsg('Correo de confirmación reenviado. Revisa también Spam o Promociones.');
     } catch (e: any) {
       setMsg(e.message);
+    } finally {
+      setBusy(false);
     }
   };
 
   const recover = async () => {
-    if (!email) {
-      setMsg('Escribe tu correo.');
-      return;
-    }
+    setBusy(true);
     try {
-      await resetPassword(email);
-      setMsg('Te enviamos un enlace de recuperación.');
+      await sendPasswordReset(email);
+      setMsg('Te enviamos un enlace para cambiar tu contraseña.');
     } catch (e: any) {
       setMsg(e.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -77,21 +113,24 @@ export default function AccountPanel({ open, onClose }: { open: boolean; onClose
         {!session ? (
           <div className="mx-auto max-w-md p-8">
             <div className="mb-5 flex gap-2">
-              <button onClick={() => setMode('login')} className={`flex-1 px-4 py-3 font-black uppercase ${mode === 'login' ? 'bg-black text-white' : 'border'}`}>Ingresar</button>
-              <button onClick={() => setMode('register')} className={`flex-1 px-4 py-3 font-black uppercase ${mode === 'register' ? 'bg-black text-white' : 'border'}`}>Crear cuenta</button>
+              <button onClick={() => { setMode('login'); setMsg(''); }} className={`flex-1 px-4 py-3 font-black uppercase ${mode === 'login' ? 'bg-black text-white' : 'border'}`}>Ingresar</button>
+              <button onClick={() => { setMode('register'); setMsg(''); }} className={`flex-1 px-4 py-3 font-black uppercase ${mode === 'register' ? 'bg-black text-white' : 'border'}`}>Crear cuenta</button>
             </div>
             {mode === 'register' && (
               <>
-                <input className="field mb-3" placeholder="Nombre completo" value={name} onChange={e => setName(e.target.value)} />
+                <input className="field mb-3" placeholder="Nombre completo *" value={name} onChange={e => setName(e.target.value)} />
                 <input className="field mb-3" placeholder="Celular" value={phone} onChange={e => setPhone(e.target.value)} />
               </>
             )}
-            <input className="field mb-3" type="email" placeholder="Correo" value={email} onChange={e => setEmail(e.target.value)} />
-            <input className="field" type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} />
-            <button onClick={submit} className="mt-4 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 font-black uppercase text-white"><LogIn /> {mode === 'login' ? 'Entrar' : 'Registrarme'}</button>
-            <button onClick={() => void signInWithGoogle()} className="mt-3 w-full border border-black px-5 py-3 font-black uppercase">Continuar con Google</button>
-            {mode === 'login' && <button onClick={recover} className="mt-4 w-full text-sm underline">Olvidé mi contraseña</button>}
-            {msg && <p className="mt-4 text-sm font-bold">{msg}</p>}
+            <input className="field mb-3" type="email" placeholder="Correo *" value={email} onChange={e => setEmail(e.target.value)} />
+            <input className="field" type="password" placeholder="Contraseña *" value={password} onChange={e => setPassword(e.target.value)} />
+            <button disabled={busy} onClick={submit} className="mt-4 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 font-black uppercase text-white disabled:opacity-50"><LogIn /> {busy ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Registrarme'}</button>
+            <button disabled={busy} onClick={() => void signInWithGoogle()} className="mt-3 w-full border border-black px-5 py-3 font-black uppercase disabled:opacity-50">Continuar con Google</button>
+            {mode === 'login' && <button disabled={busy} onClick={recover} className="mt-4 w-full text-sm underline">Olvidé mi contraseña</button>}
+            {(needsConfirmation || msg.toLowerCase().includes('confirmado')) && (
+              <button disabled={busy} onClick={resend} className="mt-3 flex w-full items-center justify-center gap-2 border border-black bg-white px-5 py-3 text-sm font-black uppercase disabled:opacity-50"><MailCheck size={18}/> Reenviar confirmación</button>
+            )}
+            {msg && <p className="mt-4 bg-white p-3 text-sm font-bold">{msg}</p>}
           </div>
         ) : (
           <div className="p-6 lg:p-8">
