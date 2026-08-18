@@ -1,3 +1,13 @@
+export type ProductVariant = {
+  id: string;
+  product_id: string;
+  sku: string;
+  size: string;
+  color: string;
+  stock: number;
+  active: boolean;
+};
+
 export type Product = {
   id: string;
   sku: string;
@@ -15,7 +25,9 @@ export type Product = {
   images: string[];
   active: boolean;
   sort_order: number;
+  variants?: ProductVariant[];
 };
+
 export type CartItem = Product & { size: string; color: string; quantity: number };
 export type CheckoutForm = { name:string; email?:string; phone:string; department:string; province:string; district:string; shipping:string; agency:string; notes:string; coupon?:string };
 export type CheckoutResult = { id:string; code:string; checkoutToken:string; subtotal:number; discount:number; total:number };
