@@ -3,21 +3,22 @@ import { supabase } from './supabase';
 export type AdminRequest={
   id:string;
   user_id:string;
-  status:'pending'|'approved'|'rejected';
+  email?:string;
+  status?:'pending'|'approved'|'rejected';
   message:string;
   created_at:string;
-  updated_at:string;
 };
 
 export async function getMyAdminState(){
-  if(!supabase)return{isAdmin:false,isOwner:false,request:null as AdminRequest|null};
-  const{data:{user}}=await supabase.auth.getUser();
-  if(!user)return{isAdmin:false,isOwner:false,request:null as AdminRequest|null};
-  const[{data:admin},{data:request}]=await Promise.all([
-    supabase.from('store_admins').select('user_id,role').eq('user_id',user.id).maybeSingle(),
-    supabase.from('admin_requests').select('id,user_id,status,message,created_at,updated_at').eq('user_id',user.id).maybeSingle()
-  ]);
-  return{isAdmin:Boolean(admin),isOwner:admin?.role==='owner',request:(request||null) as AdminRequest|null};
+  if(!supabase)return{isAdmin:false,isOwner:false,requestStatus:null as string|null};
+  const{data,error}=await supabase.rpc('get_my_admin_access_state');
+  if(error)throw error;
+  const row=Array.isArray(data)?data[0]:data;
+  return{
+    isAdmin:Boolean(row?.is_admin),
+    isOwner:Boolean(row?.is_owner),
+    requestStatus:row?.request_status?String(row.request_status):null
+  };
 }
 
 export async function requestAdminAccess(message=''){
@@ -29,7 +30,7 @@ export async function requestAdminAccess(message=''){
 
 export async function loadPendingAdminRequests():Promise<AdminRequest[]>{
   if(!supabase)return[];
-  const{data,error}=await supabase.from('admin_requests').select('id,user_id,status,message,created_at,updated_at').eq('status','pending').order('created_at',{ascending:true});
+  const{data,error}=await supabase.rpc('owner_list_pending_admin_requests');
   if(error)throw error;
   return(data||[]) as AdminRequest[];
 }
