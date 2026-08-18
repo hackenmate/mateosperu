@@ -5,6 +5,7 @@ import App from './App';
 import AccountPanel from './AccountPanel';
 import StockManagerLauncher from './StockManagerLauncher';
 import AdminAccessLauncher from './AdminAccessLauncher';
+import WhatsAppLauncher from './WhatsAppLauncher';
 import './index.css';
 
 function Root(){
@@ -13,6 +14,7 @@ function Root(){
     <App />
     <StockManagerLauncher />
     <AdminAccessLauncher />
+    <WhatsAppLauncher />
     <button onClick={()=>setAccountOpen(true)} className="fixed bottom-5 right-5 z-[70] flex items-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-black uppercase text-white shadow-xl" aria-label="Abrir mi cuenta"><UserRound size={18}/> Mi cuenta</button>
     <AccountPanel open={accountOpen} onClose={()=>setAccountOpen(false)}/>
   </>;
