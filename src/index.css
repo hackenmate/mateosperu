@@ -2,8 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 html{scroll-behavior:smooth}body{margin:0;font-family:'DM Sans',sans-serif;background:#f4f2ed}.font-display{font-family:'Bebas Neue',sans-serif}.field{width:100%;border:1px solid rgb(0 0 0/.2);background:#fff;padding:.85rem 1rem;outline:none}.field:focus{border-color:#000}button,input,select,textarea{font:inherit}button{cursor:pointer}::selection{background:#c9ff36;color:#000}
+
+/* Floating actions stay behind normal content and never cover a drawer/modal. */
 .z-\[70\],.z-\[72\],.z-\[76\]{z-index:30!important}
+
+/* Direct overlay detection for modern browsers (Chrome/Edge/Safari). */
+body:has(.fixed.inset-0:not(.pointer-events-none)) a[href^="https://wa.me/"][class*="fixed"],
+body:has(.fixed.inset-0:not(.pointer-events-none)) button[aria-label="Abrir mi cuenta"],
+body:has(.fixed.inset-0:not(.pointer-events-none)) button[class*="bottom-5"][class*="left-5"],
+body:has(.fixed.inset-0:not(.pointer-events-none)) .mateos-floating-action{
+  display:none!important;
+}
+
+/* JS fallback kept for browsers without :has support. */
+body.mateos-overlay-open .mateos-floating-action,
+body.mateos-shop-overlay-open .mateos-floating-action,
+body.mateos-account-overlay-open .mateos-floating-action,
+body.mateos-tools-overlay-open .mateos-floating-action{
+  display:none!important;
+}
+
+/* Drawer layout: header/footer stay visible, only product list scrolls. */
 aside.flex.h-full{min-height:0}
 aside.flex.h-full>div.flex-1{min-height:0}
-body.mateos-overlay-open .mateos-floating-action{display:none!important}
+
 @media(max-width:640px){body{overflow-x:hidden}}
