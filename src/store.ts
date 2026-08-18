@@ -4,7 +4,14 @@ import type { CartItem, CheckoutForm, CheckoutResult, OrderRow, Product, Product
 
 const normalizeVariant=(row:any):ProductVariant=>({id:String(row.id),product_id:String(row.product_id),sku:String(row.sku),size:String(row.size||'Única'),color:String(row.color||'Único'),stock:Number(row.stock||0),active:row.active!==false});
 const normalize = (row: any): Product => ({ id:String(row.id), sku:String(row.sku||row.id), name:String(row.name), category:row.category, collection:String(row.collection||'General'), price:Number(row.price), old_price:row.old_price==null?null:Number(row.old_price), description:String(row.description||''), sizes:Array.isArray(row.sizes)?row.sizes:[], colors:Array.isArray(row.colors)?row.colors:[], stock:Number(row.stock||0), badge:row.badge||null, image:String(row.image||row.images?.[0]||''), images:Array.isArray(row.images)?row.images:[], color_images:row.color_images&&typeof row.color_images==='object'?row.color_images:{}, active:row.active!==false, sort_order:Number(row.sort_order||0), variants:Array.isArray(row.product_variants)?row.product_variants.map(normalizeVariant):[] });
-export async function loadPublicProducts(): Promise<Product[]> { if(!supabaseConfigured||!supabase) return fallbackCatalog; const {data,error}=await supabase.from('products').select('*,product_variants(*)').eq('active',true).order('sort_order',{ascending:true}); if(error||!data?.length) return fallbackCatalog; return data.map(normalize); }
+
+export async function loadPublicProducts(): Promise<Product[]> {
+  if(!supabaseConfigured||!supabase) return fallbackCatalog;
+  const {data,error}=await supabase.from('products').select('*,product_variants(*)').eq('active',true).gt('price',0).order('sort_order',{ascending:true});
+  if(error){console.error('No se pudo cargar el catálogo:',error.message);return[];}
+  return (data||[]).map(normalize);
+}
+
 export async function createOrder(form:CheckoutForm,items:CartItem[],total:number):Promise<CheckoutResult>{ const fallbackCode=`MAT-${new Date().toISOString().slice(2,10).replaceAll('-','')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`; if(!supabaseConfigured||!supabase) return {id:crypto.randomUUID(),code:fallbackCode,checkoutToken:'',subtotal:total,discount:0,total}; const {data,error}=await supabase.functions.invoke('create-order',{body:{customer:{name:form.name.trim(),email:(form.email||'').trim()||null,phone:form.phone.trim(),department:form.department,province:form.province.trim(),district:form.district.trim(),shipping:form.shipping,agency:form.agency||null,notes:form.notes||null},items:items.map(i=>({product_id:i.id,size:i.size,color:i.color,quantity:i.quantity})),coupon:(form.coupon||'').trim()||null}}); if(error)throw error;if(data?.error)throw new Error(data.error);return{id:String(data.id),code:String(data.code),checkoutToken:String(data.checkout_token||''),subtotal:Number(data.subtotal),discount:Number(data.discount),total:Number(data.total)}; }
 export async function getSession(){if(!supabase)return null;const{data}=await supabase.auth.getSession();return data.session} export function onAuthChange(callback:(session:any)=>void){if(!supabase)return()=>{};const{data}=supabase.auth.onAuthStateChange((_event,session)=>callback(session));return()=>data.subscription.unsubscribe()} export async function signUpUser(email:string,password:string,fullName:string,phone:string){if(!supabase)throw new Error('Supabase todavía no está configurado.');const{data,error}=await supabase.auth.signUp({email,password,options:{data:{full_name:fullName,phone}}});if(error)throw error;return data} export async function signInUser(email:string,password:string){if(!supabase)throw new Error('Supabase todavía no está configurado.');const{data,error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;return data} export async function signInWithGoogle(){if(!supabase)throw new Error('Supabase todavía no está configurado.');const redirectTo=`${window.location.origin}${import.meta.env.BASE_URL}`;const{error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo}});if(error)throw error} export async function resetPassword(email:string){if(!supabase)throw new Error('Supabase todavía no está configurado.');const redirectTo=`${window.location.origin}${import.meta.env.BASE_URL}`;const{error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo});if(error)throw error} export async function signOutUser(){if(supabase)await supabase.auth.signOut()}
 export async function loadProfile():Promise<Profile|null>{if(!supabase)return null;const{data:{user}}=await supabase.auth.getUser();if(!user)return null;const{data,error}=await supabase.from('profiles').select('user_id,full_name,phone,document_number,marketing_opt_in').eq('user_id',user.id).maybeSingle();if(error)throw error;return data as Profile|null} export async function saveProfile(profile:Partial<Profile>){if(!supabase)throw new Error('Supabase no configurado.');const{data:{user}}=await supabase.auth.getUser();if(!user)throw new Error('Inicia sesión.');const{error}=await supabase.from('profiles').upsert({user_id:user.id,...profile},{onConflict:'user_id'});if(error)throw error} export async function loadMyOrders():Promise<OrderRow[]>{if(!supabase)return[];const{data,error}=await supabase.from('orders').select('id,code,customer_name,email,phone,destination,shipping_method,agency,subtotal,discount,total,status,payment_method,payment_status,payment_provider,payment_id,created_at').order('created_at',{ascending:false});if(error)throw error;return(data||[])as OrderRow[]} export async function loadFavorites():Promise<string[]>{if(!supabase)return[];const{data}=await supabase.from('favorites').select('product_id');return(data||[]).map((x:any)=>String(x.product_id))} export async function toggleFavorite(productId:string,active:boolean){if(!supabase)throw new Error('Inicia sesión para guardar favoritos.');const{data:{user}}=await supabase.auth.getUser();if(!user)throw new Error('Inicia sesión para guardar favoritos.');if(active){const{error}=await supabase.from('favorites').upsert({user_id:user.id,product_id:productId},{onConflict:'user_id,product_id'});if(error)throw error}else{const{error}=await supabase.from('favorites').delete().eq('user_id',user.id).eq('product_id',productId);if(error)throw error}}
@@ -15,30 +22,35 @@ const cleanCode=(value:string)=>value.normalize('NFD').replace(/[\u0300-\u036f]/
 const internalProductCode=(product:Product)=>product.sku.trim()||`MAT-${cleanCode(product.name)||'PRODUCTO'}-${product.id.slice(0,8).toUpperCase()}`;
 
 export async function saveProduct(product:Product){
- if(!supabase)throw new Error('Supabase no configurado.');
- if(!product.name.trim())throw new Error('El nombre del producto es obligatorio.');
- const baseCode=internalProductCode(product);
- const variants=(product.variants||[]).map((v,index)=>({
-   ...v,
-   id:v.id||crypto.randomUUID(),
-   product_id:product.id,
-   sku:v.sku.trim()||`${baseCode}-${String(index+1).padStart(2,'0')}`,
-   size:v.size.trim()||'Única',
-   color:v.color.trim()||'Único',
-   stock:Math.max(0,Number(v.stock)||0),
-   active:v.active!==false
- }));
- if(!variants.length)throw new Error('Agrega al menos una talla/color.');
- const totalStock=variants.filter(v=>v.active).reduce((s,v)=>s+v.stock,0);
- const sizes=[...new Set(variants.filter(v=>v.active).map(v=>v.size))];
- const colors=[...new Set(variants.filter(v=>v.active).map(v=>v.color))];
- const payload={...product,sku:baseCode,variants:undefined,stock:totalStock,sizes,colors,old_price:product.old_price||null,badge:product.badge||null};
- const{error}=await supabase.from('products').upsert(payload,{onConflict:'id'});if(error)throw error;
- const{data:existing,error:loadError}=await supabase.from('product_variants').select('id').eq('product_id',product.id);if(loadError)throw loadError;
- const keep=new Set(variants.map(v=>v.id));
- const remove=(existing||[]).map((x:any)=>String(x.id)).filter(id=>!keep.has(id));
- if(remove.length){const{error:delError}=await supabase.from('product_variants').delete().in('id',remove);if(delError)throw delError;}
- const{error:vError}=await supabase.from('product_variants').upsert(variants,{onConflict:'id'});if(vError)throw vError
+  if(!supabase)throw new Error('Supabase no configurado.');
+  if(!product.name.trim())throw new Error('El nombre del producto es obligatorio.');
+  const price=Number(product.price);
+  if(!Number.isFinite(price)||price<0)throw new Error('El precio ingresado no es válido.');
+  if(product.active&&price<=0)throw new Error('Para publicar, coloca un precio mayor a S/ 0.00.');
+
+  const baseCode=internalProductCode(product);
+  const variants=(product.variants||[]).map((v,index)=>({
+    ...v,
+    id:v.id||crypto.randomUUID(),
+    product_id:product.id,
+    sku:v.sku.trim()||`${baseCode}-${String(index+1).padStart(2,'0')}`,
+    size:v.size.trim()||'Única',
+    color:v.color.trim()||'Único',
+    stock:Math.max(0,Number(v.stock)||0),
+    active:v.active!==false
+  }));
+  if(!variants.length)throw new Error('Agrega al menos una talla/color.');
+  const totalStock=variants.filter(v=>v.active).reduce((s,v)=>s+v.stock,0);
+  const sizes=[...new Set(variants.filter(v=>v.active).map(v=>v.size))];
+  const colors=[...new Set(variants.filter(v=>v.active).map(v=>v.color))];
+  const payload={...product,price,sku:baseCode,variants:undefined,stock:totalStock,sizes,colors,old_price:product.old_price==null?null:Number(product.old_price),badge:product.badge||null};
+  const{error}=await supabase.from('products').upsert(payload,{onConflict:'id'});if(error)throw error;
+  const{data:existing,error:loadError}=await supabase.from('product_variants').select('id').eq('product_id',product.id);if(loadError)throw loadError;
+  const keep=new Set(variants.map(v=>v.id));
+  const remove=(existing||[]).map((x:any)=>String(x.id)).filter(id=>!keep.has(id));
+  if(remove.length){const{error:delError}=await supabase.from('product_variants').delete().in('id',remove);if(delError)throw delError;}
+  const{error:vError}=await supabase.from('product_variants').upsert(variants,{onConflict:'id'});if(vError)throw vError;
 }
+
 export async function deleteProduct(id:string){if(!supabase)throw new Error('Supabase no configurado.');const{error}=await supabase.from('products').update({active:false}).eq('id',id);if(error)throw error} export async function loadOrders():Promise<OrderRow[]>{if(!supabase)return[];const{data,error}=await supabase.from('orders').select('id,code,customer_name,email,phone,destination,shipping_method,agency,subtotal,discount,total,status,payment_method,payment_status,payment_provider,payment_id,created_at').order('created_at',{ascending:false}).limit(200);if(error)throw error;return(data||[])as OrderRow[]} export async function updateOrderStatus(id:string,status:string){if(!supabase)return;const{error}=await supabase.from('orders').update({status}).eq('id',id);if(error)throw error}
 async function compressImage(file:File):Promise<Blob>{const bitmap=await createImageBitmap(file);const max=1800;const scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d')!.drawImage(bitmap,0,0,canvas.width,canvas.height);const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo comprimir la imagen.')),'image/webp',0.84));bitmap.close();return blob} export async function uploadProductImages(productId:string,files:File[]):Promise<string[]>{if(!supabase)throw new Error('Supabase no configurado.');const urls:string[]=[];for(const file of files){if(!file.type.startsWith('image/'))continue;const blob=await compressImage(file);const path=`${productId}/${Date.now()}-${crypto.randomUUID()}.webp`;const{error}=await supabase.storage.from('product-images').upload(path,blob,{contentType:'image/webp',cacheControl:'31536000',upsert:false});if(error)throw error;const{data}=supabase.storage.from('product-images').getPublicUrl(path);urls.push(data.publicUrl)}return urls}
