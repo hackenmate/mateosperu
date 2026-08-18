@@ -1,324 +1,77 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, ArrowLeft, ArrowRight, ImagePlus, LogIn, LogOut, Plus, RefreshCw, RotateCcw, Save, Search, Star, Trash2, X } from 'lucide-react';
+import { Archive, ArrowLeft, ArrowRight, ImagePlus, LogIn, LogOut, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, X } from 'lucide-react';
 import { isCurrentUserAdmin, loadAdminProducts, loadOrders, saveProduct, signInAdmin, signOutAdmin, updateOrderStatus, uploadProductImages } from './store';
 import { clearProductPhotos, deleteProductPhoto, saveProductGallery, setProductActive } from './adminCatalog';
 import { supabaseConfigured } from './supabase';
 import type { OrderRow, Product, ProductVariant } from './types';
 
-const newVariant=(productId:string):ProductVariant=>({
-  id:crypto.randomUUID(),
-  product_id:productId,
-  sku:'',
-  size:'S',
-  color:'Negro',
-  stock:0,
-  active:true
-});
-
-const fresh=():Product=>{
-  const id=crypto.randomUUID();
-  return{
-    id,
-    sku:'',
-    name:'',
-    category:'Mujer',
-    collection:'General',
-    price:0,
-    old_price:null,
-    description:'',
-    sizes:['S'],
-    colors:['Negro'],
-    stock:0,
-    badge:null,
-    image:'',
-    images:[],
-    color_images:{},
-    active:true,
-    sort_order:999,
-    variants:[newVariant(id)]
-  };
-};
+const newVariant=(productId:string):ProductVariant=>({id:crypto.randomUUID(),product_id:productId,sku:'',size:'S',color:'Negro',stock:0,active:true});
+const fresh=():Product=>{const id=crypto.randomUUID();return{id,sku:'',name:'',category:'Mujer',collection:'General',price:0,old_price:null,description:'',sizes:['S'],colors:['Negro'],stock:0,badge:null,image:'',images:[],color_images:{},active:false,sort_order:999,variants:[newVariant(id)]}};
 
 export default function AdminPanel({open,onClose,onCatalogChanged}:{open:boolean;onClose:()=>void;onCatalogChanged:()=>void}){
-  const [ok,setOk]=useState(false);
-  const [email,setEmail]=useState('');
-  const [password,setPassword]=useState('');
-  const [products,setProducts]=useState<Product[]>([]);
-  const [orders,setOrders]=useState<OrderRow[]>([]);
-  const [editing,setEditing]=useState<Product|null>(null);
-  const [msg,setMsg]=useState('');
-  const [uploading,setUploading]=useState(false);
-  const [query,setQuery]=useState('');
-  const [categoryFilter,setCategoryFilter]=useState('Todos');
-  const [statusFilter,setStatusFilter]=useState('Activos');
-  const [page,setPage]=useState(1);
+  const [ok,setOk]=useState(false),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[products,setProducts]=useState<Product[]>([]),[orders,setOrders]=useState<OrderRow[]>([]),[editing,setEditing]=useState<Product|null>(null),[msg,setMsg]=useState(''),[uploading,setUploading]=useState(false),[query,setQuery]=useState(''),[categoryFilter,setCategoryFilter]=useState('Todos'),[statusFilter,setStatusFilter]=useState('Todos'),[page,setPage]=useState(1);
   const pageSize=12;
+  const totalVariantStock=useMemo(()=>editing?.variants?.filter(v=>v.active).reduce((sum,v)=>sum+Number(v.stock||0),0)||0,[editing]);
+  const refresh=async()=>{setProducts(await loadAdminProducts());setOrders(await loadOrders())};
 
-  const totalVariantStock=useMemo(
-    ()=>editing?.variants?.filter(v=>v.active).reduce((sum,v)=>sum+Number(v.stock||0),0)||0,
-    [editing]
-  );
-
-  const refresh=async()=>{
-    setProducts(await loadAdminProducts());
-    setOrders(await loadOrders());
-  };
-
-  useEffect(()=>{
-    if(open&&supabaseConfigured){
-      isCurrentUserAdmin().then(value=>{
-        setOk(value);
-        if(value)void refresh();
-      });
-    }
-  },[open]);
-
+  useEffect(()=>{if(open&&supabaseConfigured){isCurrentUserAdmin().then(value=>{setOk(value);if(value)void refresh()})}},[open]);
   useEffect(()=>setPage(1),[query,categoryFilter,statusFilter]);
 
   const filtered=useMemo(()=>products.filter(product=>{
     const q=query.trim().toLowerCase();
     const matchesQuery=!q||`${product.name} ${product.category} ${product.collection}`.toLowerCase().includes(q);
     const matchesCategory=categoryFilter==='Todos'||product.category===categoryFilter;
-    const matchesStatus=statusFilter==='Todos'||(statusFilter==='Activos'?product.active:!product.active);
+    const matchesStatus=statusFilter==='Todos'||(statusFilter==='Publicados'?product.active:!product.active);
     return matchesQuery&&matchesCategory&&matchesStatus;
   }),[products,query,categoryFilter,statusFilter]);
 
   const totalPages=Math.max(1,Math.ceil(filtered.length/pageSize));
   const visible=filtered.slice((page-1)*pageSize,page*pageSize);
   const editingExists=editing?products.some(p=>p.id===editing.id):false;
-
   if(!open)return null;
 
-  const login=async()=>{
-    try{
-      setMsg('');
-      await signInAdmin(email,password);
-      setOk(true);
-      await refresh();
-    }catch(e:any){setMsg(e.message)}
-  };
-
+  const login=async()=>{try{setMsg('');await signInAdmin(email,password);setOk(true);await refresh()}catch(e:any){setMsg(e.message)}};
   const persist=async()=>{
     if(!editing)return;
-    if(!editing.name.trim()){
-      setMsg('Escribe el nombre del producto.');
-      return;
-    }
-    if(!(editing.price>0)){
-      setMsg('El precio debe ser mayor a S/ 0.');
-      return;
-    }
-    if(!(editing.variants||[]).length){
-      setMsg('Agrega por lo menos una talla/color.');
-      return;
-    }
-    try{
-      await saveProduct(editing);
-      setEditing(null);
-      setMsg('Producto guardado correctamente.');
-      await refresh();
-      onCatalogChanged();
-    }catch(e:any){setMsg(e.message)}
+    if(!editing.name.trim()){setMsg('Escribe el nombre del producto.');return;}
+    if(editing.active&&!(editing.price>0)){setMsg('Para publicar, primero coloca un precio mayor a S/ 0. Puedes desmarcar “Mostrar en tienda” y guardarlo como borrador.');return;}
+    if(!(editing.variants||[]).length){setMsg('Agrega por lo menos una talla/color.');return;}
+    try{await saveProduct(editing);setEditing(null);setMsg(editing.active?'Producto publicado correctamente.':'Borrador guardado correctamente.');await refresh();onCatalogChanged()}catch(e:any){setMsg(e.message)}
   };
 
-  const upload=async(files:FileList|null)=>{
-    if(!editing||!files?.length)return;
-    setUploading(true);
-    try{
-      const urls=await uploadProductImages(editing.id,Array.from(files));
-      setEditing({...editing,images:[...editing.images,...urls],image:editing.image||urls[0]||''});
-      setMsg(`${urls.length} foto${urls.length===1?'':'s'} subida${urls.length===1?'':'s'}.`);
-    }catch(e:any){setMsg(e.message)}
-    finally{setUploading(false)}
-  };
+  const upload=async(files:FileList|null)=>{if(!editing||!files?.length)return;setUploading(true);try{const urls=await uploadProductImages(editing.id,Array.from(files));setEditing({...editing,images:[...editing.images,...urls],image:editing.image||urls[0]||''});setMsg(`${urls.length} foto${urls.length===1?'':'s'} subida${urls.length===1?'':'s'}.`)}catch(e:any){setMsg(e.message)}finally{setUploading(false)}};
+  const patchVariant=(id:string,patch:Partial<ProductVariant>)=>setEditing(current=>current?({...current,variants:(current.variants||[]).map(v=>v.id===id?{...v,...patch}:v)}):current);
+  const addVariant=()=>setEditing(current=>current?({...current,variants:[...(current.variants||[]),newVariant(current.id)]}):current);
+  const removeVariant=(id:string)=>setEditing(current=>current?({...current,variants:(current.variants||[]).filter(v=>v.id!==id)}):current);
 
-  const patchVariant=(id:string,patch:Partial<ProductVariant>)=>{
-    setEditing(current=>current?{
-      ...current,
-      variants:(current.variants||[]).map(v=>v.id===id?{...v,...patch}:v)
-    }:current);
-  };
+  const movePhoto=async(index:number,delta:number)=>{if(!editing)return;const target=index+delta;if(target<0||target>=editing.images.length)return;const images=[...editing.images];[images[index],images[target]]=[images[target],images[index]];const next={...editing,images};setEditing(next);if(editingExists)await saveProductGallery(next)};
+  const removePhoto=async(url:string)=>{if(!editing||!confirm('¿Eliminar esta foto?'))return;try{if(editingExists)setEditing(await deleteProductPhoto(editing,url));else{const images=editing.images.filter(item=>item!==url);setEditing({...editing,images,image:editing.image===url?(images[0]||''):editing.image})}setMsg('Foto eliminada.')}catch(e:any){setMsg(e.message)}};
+  const clearPhotos=async()=>{if(!editing||!editing.images.length||!confirm('¿Eliminar todas las fotos de este producto?'))return;try{if(editingExists)setEditing(await clearProductPhotos(editing));else setEditing({...editing,images:[],image:'',color_images:{}});setMsg('Galería vaciada.')}catch(e:any){setMsg(e.message)}};
+  const makePrimary=async(url:string)=>{if(!editing)return;const next={...editing,image:url};setEditing(next);if(editingExists){try{await saveProductGallery(next)}catch(e:any){setMsg(e.message)}}};
 
-  const addVariant=()=>setEditing(current=>current?{
-    ...current,
-    variants:[...(current.variants||[]),newVariant(current.id)]
-  }:current);
+  return <div className="fixed inset-0 z-[90] overflow-y-auto bg-black/70 p-4"><div className="mx-auto min-h-[80vh] max-w-7xl bg-[#f4f2ed]">
+    <div className="flex items-center justify-between border-b p-5"><div><p className="text-xs font-black uppercase tracking-[.2em] text-black/40">Mateo’s</p><h2 className="font-display text-4xl">PANEL ADMINISTRADOR</h2></div><button onClick={onClose}><X/></button></div>
+    {!supabaseConfigured?<div className="p-8">Supabase pendiente.</div>:!ok?<div className="mx-auto max-w-md p-8"><h3 className="font-display text-4xl">INICIAR SESIÓN</h3><input className="field mt-5" placeholder="Correo admin" value={email} onChange={e=>setEmail(e.target.value)}/><input className="field mt-3" type="password" placeholder="Contraseña" value={password} onChange={e=>setPassword(e.target.value)}/><button onClick={login} className="mt-4 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 font-black uppercase text-white"><LogIn/> Entrar</button>{msg&&<p className="mt-4 text-sm text-red-700">{msg}</p>}</div>:<div className="p-5 lg:p-8">
+      <div className="mb-6 flex flex-wrap gap-3"><button onClick={()=>{setMsg('');setEditing(fresh())}} className="flex items-center gap-2 bg-black px-4 py-3 text-sm font-black uppercase text-white"><Plus/> Nuevo producto</button><button onClick={refresh} className="flex items-center gap-2 border border-black px-4 py-3 text-sm font-black uppercase"><RefreshCw/> Actualizar</button><button onClick={async()=>{await signOutAdmin();setOk(false)}} className="ml-auto flex items-center gap-2 border border-black px-4 py-3 text-sm font-black uppercase"><LogOut/> Salir</button></div>
+      {msg&&<p className="mb-5 bg-white p-3 text-sm font-bold">{msg}</p>}
+      <div className="mb-5 grid gap-3 md:grid-cols-[1fr_180px_180px]"><label className="flex items-center gap-2 bg-white px-3"><Search size={18}/><input className="w-full bg-transparent py-3 outline-none" placeholder="Buscar por nombre o colección" value={query} onChange={e=>setQuery(e.target.value)}/></label><select className="field" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option>Todos</option><option>Mujer</option><option>Hombre</option><option>Niños</option></select><select className="field" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>Todos</option><option>Publicados</option><option>Borradores</option></select></div>
+      <div className="grid gap-8 lg:grid-cols-[1.25fr_.75fr]"><section><div className="flex items-end justify-between"><div><h3 className="font-display text-3xl">PRODUCTOS ({filtered.length})</h3><p className="text-xs text-black/50">Publicados {products.filter(p=>p.active).length} · Borradores {products.filter(p=>!p.active).length}</p></div><p className="text-xs font-bold">Página {page}/{totalPages}</p></div><div className="mt-4 space-y-3">{visible.map(product=><div key={product.id} className={`grid grid-cols-[70px_1fr_auto] items-center gap-3 p-3 ${product.active?'bg-white':'bg-black/5'}`}><img src={product.image||product.images[0]||'https://placehold.co/140x160?text=Sin+foto'} className="h-20 w-[70px] object-cover"/><button className="text-left" onClick={()=>{setMsg('');setEditing({...product,variants:product.variants||[]})}}><div className="flex items-center gap-2"><b>{product.name}</b><span className={`px-2 py-0.5 text-[10px] font-black uppercase ${product.active?'bg-[#c9ff36]':'bg-black text-white'}`}>{product.active?'Publicado':'Borrador'}</span></div><p className="text-xs text-black/50">{product.category} · {product.variants?.length||0} opciones · Stock {product.stock}</p><p className={`text-sm font-black ${product.price>0?'':'text-red-700'}`}>{product.price>0?`S/ ${product.price.toFixed(2)}`:'Precio pendiente'}</p></button>{product.active?<button title="Archivar" onClick={async()=>{if(!confirm('¿Pasar este producto a borrador?'))return;await setProductActive(product.id,false);await refresh();onCatalogChanged()}} className="border p-2"><Archive size={17}/></button>:<button title="Completar producto" onClick={()=>{setMsg('Completa precio, stock y datos; luego marca “Mostrar en tienda” para publicarlo.');setEditing({...product,variants:product.variants||[]})}} className="flex items-center gap-1 border px-3 py-2 text-xs font-black uppercase"><Pencil size={15}/> Completar</button>}</div>)}{!visible.length&&<div className="bg-white p-8 text-center text-sm text-black/50">No hay productos con esos filtros.</div>}</div><div className="mt-4 flex justify-between"><button disabled={page<=1} onClick={()=>setPage(p=>p-1)} className="border px-4 py-2 font-bold disabled:opacity-30">Anterior</button><button disabled={page>=totalPages} onClick={()=>setPage(p=>p+1)} className="border px-4 py-2 font-bold disabled:opacity-30">Siguiente</button></div></section>
+        <section><h3 className="font-display text-3xl">PEDIDOS ({orders.length})</h3><div className="mt-4 space-y-3">{orders.map(order=><div key={order.id} className="bg-white p-4"><div className="flex justify-between gap-3"><div><b>{order.code}</b><p className="text-xs text-black/50">{order.customer_name} · {order.phone}</p></div><b>S/ {Number(order.total).toFixed(2)}</b></div><select className="field mt-3" value={order.status} onChange={async e=>{await updateOrderStatus(order.id,e.target.value);await refresh()}}><option>Nuevo</option><option>Confirmado</option><option>En preparación</option><option>Enviado</option><option>Entregado</option><option>Cancelado</option></select></div>)}</div></section></div>
+    </div>}
 
-  const removeVariant=(id:string)=>setEditing(current=>current?{
-    ...current,
-    variants:(current.variants||[]).filter(v=>v.id!==id)
-  }:current);
-
-  const movePhoto=async(index:number,delta:number)=>{
-    if(!editing)return;
-    const target=index+delta;
-    if(target<0||target>=editing.images.length)return;
-    const images=[...editing.images];
-    [images[index],images[target]]=[images[target],images[index]];
-    const next={...editing,images};
-    setEditing(next);
-    if(editingExists)await saveProductGallery(next);
-  };
-
-  const removePhoto=async(url:string)=>{
-    if(!editing||!confirm('¿Eliminar esta foto?'))return;
-    try{
-      if(editingExists){
-        const next=await deleteProductPhoto(editing,url);
-        setEditing(next);
-      }else{
-        const images=editing.images.filter(item=>item!==url);
-        setEditing({...editing,images,image:editing.image===url?(images[0]||''):editing.image});
-      }
-      setMsg('Foto eliminada.');
-    }catch(e:any){setMsg(e.message)}
-  };
-
-  const clearPhotos=async()=>{
-    if(!editing||!editing.images.length||!confirm('¿Eliminar todas las fotos de este producto?'))return;
-    try{
-      if(editingExists)setEditing(await clearProductPhotos(editing));
-      else setEditing({...editing,images:[],image:'',color_images:{}});
-      setMsg('Galería vaciada.');
-    }catch(e:any){setMsg(e.message)}
-  };
-
-  const makePrimary=async(url:string)=>{
-    if(!editing)return;
-    const next={...editing,image:url};
-    setEditing(next);
-    if(editingExists){
-      try{await saveProductGallery(next)}catch(e:any){setMsg(e.message)}
-    }
-  };
-
-  return <div className="fixed inset-0 z-[90] overflow-y-auto bg-black/70 p-4">
-    <div className="mx-auto min-h-[80vh] max-w-7xl bg-[#f4f2ed]">
-      <div className="flex items-center justify-between border-b p-5">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[.2em] text-black/40">Mateo’s</p>
-          <h2 className="font-display text-4xl">PANEL ADMINISTRADOR</h2>
-        </div>
-        <button onClick={onClose}><X/></button>
+    {editing&&<div className="fixed inset-0 z-[100] overflow-y-auto bg-black/70 p-4"><div className="mx-auto my-8 max-w-5xl bg-[#f4f2ed] p-6"><div className="flex justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-black/40">{editing.active?'Producto publicado':'Borrador'}</p><h3 className="font-display text-4xl">{editing.name||'NUEVO PRODUCTO'}</h3></div><button onClick={()=>setEditing(null)}><X/></button></div>
+      {msg&&<p className="mt-4 bg-white p-3 text-sm font-bold">{msg}</p>}
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><label className="lg:col-span-2"><span className="mb-1 block text-xs font-black uppercase text-black/50">Nombre del producto</span><input className="field" placeholder="Ej. Legging deportivo negro" value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></label><label><span className="mb-1 block text-xs font-black uppercase text-black/50">Categoría</span><select className="field" value={editing.category} onChange={e=>setEditing({...editing,category:e.target.value as Product['category']})}><option>Mujer</option><option>Hombre</option><option>Niños</option></select></label>
+        <label><span className="mb-1 block text-xs font-black uppercase text-black/50">Precio (S/)</span><input className="field" type="number" inputMode="decimal" min="0" step="0.10" placeholder="Ej. 59.90" value={editing.price||''} onChange={e=>setEditing({...editing,price:e.target.value===''?0:Number(e.target.value)})}/></label><label><span className="mb-1 block text-xs font-black uppercase text-black/50">Precio anterior (S/, opcional)</span><input className="field" type="number" inputMode="decimal" min="0" step="0.10" placeholder="Ej. 79.90" value={editing.old_price||''} onChange={e=>setEditing({...editing,old_price:e.target.value?Number(e.target.value):null})}/></label><div><span className="mb-1 block text-xs font-black uppercase text-black/50">Stock total</span><div className="field bg-white font-black">{totalVariantStock} unidades</div></div>
+        <label className="sm:col-span-2 lg:col-span-3"><span className="mb-1 block text-xs font-black uppercase text-black/50">Descripción</span><textarea className="field min-h-28" placeholder="Describe la prenda, material, ajuste, uso, etc." value={editing.description} onChange={e=>setEditing({...editing,description:e.target.value})}/></label>
+        {editing.price<=0&&<div className="sm:col-span-2 lg:col-span-3 border border-amber-400 bg-amber-50 p-3 text-sm font-bold">Precio pendiente. Puedes guardar el borrador, pero no publicarlo hasta colocar un precio mayor a S/ 0.</div>}
+        <label className="flex items-center gap-3 bg-white p-4 sm:col-span-2 lg:col-span-3"><input type="checkbox" checked={editing.active} onChange={e=>setEditing({...editing,active:e.target.checked})}/><span><b className="block uppercase">Mostrar este producto en la tienda</b><span className="text-xs text-black/50">Actívalo cuando precio, fotos y stock estén listos.</span></span></label>
+        <label className="sm:col-span-2 lg:col-span-3 flex cursor-pointer items-center justify-center gap-2 border-2 border-dashed border-black/30 bg-white p-6 font-black uppercase"><ImagePlus/> {uploading?'Subiendo fotos...':'Subir fotos'}<input type="file" accept="image/*" multiple className="hidden" onChange={e=>upload(e.target.files)}/></label>
+        {editing.images.length>0&&<div className="sm:col-span-2 lg:col-span-3"><div className="mb-3 flex items-center justify-between"><div><b>Fotos ({editing.images.length})</b><p className="text-xs text-black/50">Marca la principal, ordénalas o elimina las que no quieras.</p></div><button onClick={clearPhotos} className="flex items-center gap-2 border border-red-700 px-3 py-2 text-xs font-black uppercase text-red-700"><Trash2 size={15}/> Quitar todas</button></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">{editing.images.map((url,index)=><div key={`${url}-${index}`} className={`relative bg-white p-2 ${editing.image===url?'ring-2 ring-black':''}`}><div className="relative aspect-square overflow-hidden bg-black/5"><img src={url} className="h-full w-full object-cover"/>{editing.image===url&&<span className="absolute left-2 top-2 flex items-center gap-1 bg-[#c9ff36] px-2 py-1 text-[10px] font-black uppercase"><Star size={12}/> Principal</span>}</div><div className="mt-2 grid grid-cols-4 gap-1"><button title="Hacer principal" onClick={()=>makePrimary(url)} className="border p-2"><Star size={14}/></button><button title="Mover izquierda" onClick={()=>movePhoto(index,-1)} disabled={index===0} className="border p-2 disabled:opacity-25"><ArrowLeft size={14}/></button><button title="Mover derecha" onClick={()=>movePhoto(index,1)} disabled={index===editing.images.length-1} className="border p-2 disabled:opacity-25"><ArrowRight size={14}/></button><button title="Eliminar foto" onClick={()=>removePhoto(url)} className="border border-red-700 p-2 text-red-700"><Trash2 size={14}/></button></div></div>)}</div></div>}
       </div>
 
-      {!supabaseConfigured?<div className="p-8">Supabase pendiente.</div>:!ok?
-        <div className="mx-auto max-w-md p-8">
-          <h3 className="font-display text-4xl">INICIAR SESIÓN</h3>
-          <input className="field mt-5" placeholder="Correo admin" value={email} onChange={e=>setEmail(e.target.value)}/>
-          <input className="field mt-3" type="password" placeholder="Contraseña" value={password} onChange={e=>setPassword(e.target.value)}/>
-          <button onClick={login} className="mt-4 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 font-black uppercase text-white"><LogIn/> Entrar</button>
-          {msg&&<p className="mt-4 text-sm text-red-700">{msg}</p>}
-        </div>
-      :<div className="p-5 lg:p-8">
-        <div className="mb-6 flex flex-wrap gap-3">
-          <button onClick={()=>setEditing(fresh())} className="flex items-center gap-2 bg-black px-4 py-3 text-sm font-black uppercase text-white"><Plus/> Nuevo producto</button>
-          <button onClick={refresh} className="flex items-center gap-2 border border-black px-4 py-3 text-sm font-black uppercase"><RefreshCw/> Actualizar</button>
-          <button onClick={async()=>{await signOutAdmin();setOk(false)}} className="ml-auto flex items-center gap-2 border border-black px-4 py-3 text-sm font-black uppercase"><LogOut/> Salir</button>
-        </div>
-
-        {msg&&<p className="mb-5 bg-white p-3 text-sm font-bold">{msg}</p>}
-
-        <div className="mb-5 grid gap-3 md:grid-cols-[1fr_180px_180px]">
-          <label className="flex items-center gap-2 bg-white px-3"><Search size={18}/><input className="w-full bg-transparent py-3 outline-none" placeholder="Buscar por nombre o colección" value={query} onChange={e=>setQuery(e.target.value)}/></label>
-          <select className="field" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option>Todos</option><option>Mujer</option><option>Hombre</option><option>Niños</option></select>
-          <select className="field" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option>Activos</option><option>Archivados</option><option>Todos</option></select>
-        </div>
-
-        <div className="grid gap-8 lg:grid-cols-[1.25fr_.75fr]">
-          <section>
-            <div className="flex items-end justify-between">
-              <div><h3 className="font-display text-3xl">PRODUCTOS ({filtered.length})</h3><p className="text-xs text-black/50">Publicados {products.filter(p=>p.active).length} · Archivados {products.filter(p=>!p.active).length}</p></div>
-              <p className="text-xs font-bold">Página {page}/{totalPages}</p>
-            </div>
-            <div className="mt-4 space-y-3">
-              {visible.map(product=><div key={product.id} className={`grid grid-cols-[70px_1fr_auto] items-center gap-3 p-3 ${product.active?'bg-white':'bg-black/5 opacity-70'}`}>
-                <img src={product.image||product.images[0]||'https://placehold.co/140x160?text=Sin+foto'} className="h-20 w-[70px] object-cover"/>
-                <button className="text-left" onClick={()=>setEditing({...product,variants:product.variants||[]})}>
-                  <div className="flex items-center gap-2"><b>{product.name}</b><span className={`px-2 py-0.5 text-[10px] font-black uppercase ${product.active?'bg-[#c9ff36]':'bg-black text-white'}`}>{product.active?'Publicado':'Archivado'}</span></div>
-                  <p className="text-xs text-black/50">{product.category} · {product.variants?.length||0} opciones · Stock {product.stock}</p>
-                  <p className="text-sm font-black">S/ {product.price.toFixed(2)}</p>
-                </button>
-                {product.active?
-                  <button title="Archivar" onClick={async()=>{if(!confirm('¿Archivar este producto?'))return;await setProductActive(product.id,false);await refresh();onCatalogChanged()}} className="border p-2"><Archive size={17}/></button>
-                  :<button title="Restaurar" onClick={async()=>{await setProductActive(product.id,true);await refresh();onCatalogChanged()}} className="border p-2"><RotateCcw size={17}/></button>}
-              </div>)}
-              {!visible.length&&<div className="bg-white p-8 text-center text-sm text-black/50">No hay productos con esos filtros.</div>}
-            </div>
-            <div className="mt-4 flex justify-between">
-              <button disabled={page<=1} onClick={()=>setPage(p=>p-1)} className="border px-4 py-2 font-bold disabled:opacity-30">Anterior</button>
-              <button disabled={page>=totalPages} onClick={()=>setPage(p=>p+1)} className="border px-4 py-2 font-bold disabled:opacity-30">Siguiente</button>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="font-display text-3xl">PEDIDOS ({orders.length})</h3>
-            <div className="mt-4 space-y-3">
-              {orders.map(order=><div key={order.id} className="bg-white p-4">
-                <div className="flex justify-between gap-3"><div><b>{order.code}</b><p className="text-xs text-black/50">{order.customer_name} · {order.phone}</p></div><b>S/ {Number(order.total).toFixed(2)}</b></div>
-                <select className="field mt-3" value={order.status} onChange={async e=>{await updateOrderStatus(order.id,e.target.value);await refresh()}}><option>Nuevo</option><option>Confirmado</option><option>En preparación</option><option>Enviado</option><option>Entregado</option><option>Cancelado</option></select>
-              </div>)}
-            </div>
-          </section>
-        </div>
-      </div>}
-
-      {editing&&<div className="fixed inset-0 z-[100] overflow-y-auto bg-black/70 p-4">
-        <div className="mx-auto my-8 max-w-5xl bg-[#f4f2ed] p-6">
-          <div className="flex justify-between">
-            <div><p className="text-xs font-black uppercase tracking-[.18em] text-black/40">Registro manual</p><h3 className="font-display text-4xl">{editing.name||'NUEVO PRODUCTO'}</h3></div>
-            <button onClick={()=>setEditing(null)}><X/></button>
-          </div>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="lg:col-span-2"><span className="mb-1 block text-xs font-black uppercase text-black/50">Nombre del producto</span><input className="field" placeholder="Ej. Legging deportivo negro" value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></label>
-            <label><span className="mb-1 block text-xs font-black uppercase text-black/50">Categoría</span><select className="field" value={editing.category} onChange={e=>setEditing({...editing,category:e.target.value as Product['category']})}><option>Mujer</option><option>Hombre</option><option>Niños</option></select></label>
-            <label><span className="mb-1 block text-xs font-black uppercase text-black/50">Precio (S/)</span><input className="field" type="number" min="0" step="0.10" placeholder="0.00" value={editing.price||''} onChange={e=>setEditing({...editing,price:Number(e.target.value)})}/></label>
-            <label><span className="mb-1 block text-xs font-black uppercase text-black/50">Precio anterior (S/, opcional)</span><input className="field" type="number" min="0" step="0.10" placeholder="0.00" value={editing.old_price||''} onChange={e=>setEditing({...editing,old_price:e.target.value?Number(e.target.value):null})}/></label>
-            <div><span className="mb-1 block text-xs font-black uppercase text-black/50">Stock total</span><div className="field bg-white font-black">{totalVariantStock} unidades</div></div>
-            <label className="sm:col-span-2 lg:col-span-3"><span className="mb-1 block text-xs font-black uppercase text-black/50">Descripción</span><textarea className="field min-h-28" placeholder="Describe la prenda, material, ajuste, uso, etc." value={editing.description} onChange={e=>setEditing({...editing,description:e.target.value})}/></label>
-            <label className="flex items-center gap-3 bg-white p-4 sm:col-span-2 lg:col-span-3"><input type="checkbox" checked={editing.active} onChange={e=>setEditing({...editing,active:e.target.checked})}/><span className="font-black uppercase">Mostrar este producto en la tienda</span></label>
-
-            <label className="sm:col-span-2 lg:col-span-3 flex cursor-pointer items-center justify-center gap-2 border-2 border-dashed border-black/30 bg-white p-6 font-black uppercase"><ImagePlus/> {uploading?'Subiendo fotos...':'Subir fotos manualmente'}<input type="file" accept="image/*" multiple className="hidden" onChange={e=>upload(e.target.files)}/></label>
-
-            {editing.images.length>0&&<div className="sm:col-span-2 lg:col-span-3">
-              <div className="mb-3 flex items-center justify-between"><div><b>Fotos ({editing.images.length})</b><p className="text-xs text-black/50">Marca una como principal o elimínala cuando quieras.</p></div><button onClick={clearPhotos} className="flex items-center gap-2 border border-red-700 px-3 py-2 text-xs font-black uppercase text-red-700"><Trash2 size={15}/> Quitar todas</button></div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {editing.images.map((url,index)=><div key={`${url}-${index}`} className={`relative bg-white p-2 ${editing.image===url?'ring-2 ring-black':''}`}>
-                  <div className="relative aspect-square overflow-hidden bg-black/5"><img src={url} className="h-full w-full object-cover"/>{editing.image===url&&<span className="absolute left-2 top-2 flex items-center gap-1 bg-[#c9ff36] px-2 py-1 text-[10px] font-black uppercase"><Star size={12}/> Principal</span>}</div>
-                  <div className="mt-2 grid grid-cols-4 gap-1">
-                    <button title="Hacer principal" onClick={()=>makePrimary(url)} className="border p-2"><Star size={14}/></button>
-                    <button title="Mover izquierda" onClick={()=>movePhoto(index,-1)} disabled={index===0} className="border p-2 disabled:opacity-25"><ArrowLeft size={14}/></button>
-                    <button title="Mover derecha" onClick={()=>movePhoto(index,1)} disabled={index===editing.images.length-1} className="border p-2 disabled:opacity-25"><ArrowRight size={14}/></button>
-                    <button title="Eliminar foto" onClick={()=>removePhoto(url)} className="border border-red-700 p-2 text-red-700"><Trash2 size={14}/></button>
-                  </div>
-                </div>)}
-              </div>
-            </div>}
-          </div>
-
-          <div className="mt-8">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><h4 className="font-display text-3xl">TALLAS, COLORES Y STOCK</h4><p className="text-sm text-black/55">Agrega una fila por cada combinación que realmente tengas.</p></div>
-              <button onClick={addVariant} className="flex items-center gap-2 border border-black bg-white px-4 py-3 text-sm font-black uppercase"><Plus size={18}/> Agregar opción</button>
-            </div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[620px] border-collapse bg-white text-sm">
-                <thead><tr className="border-b text-left text-xs uppercase tracking-wide text-black/50"><th className="p-3">Talla</th><th className="p-3">Color</th><th className="p-3">Stock</th><th className="p-3">Disponible</th><th className="p-3">Eliminar</th></tr></thead>
-                <tbody>{(editing.variants||[]).map(variant=><tr key={variant.id} className="border-b last:border-0">
-                  <td className="p-2"><input className="field" placeholder="S, M, L..." value={variant.size} onChange={e=>patchVariant(variant.id,{size:e.target.value})}/></td>
-                  <td className="p-2"><input className="field" placeholder="Negro, Blanco..." value={variant.color} onChange={e=>patchVariant(variant.id,{color:e.target.value})}/></td>
-                  <td className="p-2"><input className="field" type="number" min="0" value={variant.stock} onChange={e=>patchVariant(variant.id,{stock:Math.max(0,Number(e.target.value))})}/></td>
-                  <td className="p-2 text-center"><input type="checkbox" checked={variant.active} onChange={e=>patchVariant(variant.id,{active:e.target.checked})}/></td>
-                  <td className="p-2"><button title="Eliminar opción" onClick={()=>removeVariant(variant.id)} className="border border-red-700 p-2 text-red-700"><Trash2 size={16}/></button></td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-          </div>
-
-          <button onClick={persist} className="mt-6 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 font-black uppercase text-white"><Save/> Guardar producto</button>
-        </div>
-      </div>}
-    </div>
-  </div>;
+      <div className="mt-8"><div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-display text-3xl">TALLAS, COLORES Y STOCK</h4><p className="text-sm text-black/55">Una fila por cada combinación que realmente tengas.</p></div><button onClick={addVariant} className="flex items-center gap-2 border border-black bg-white px-4 py-3 text-sm font-black uppercase"><Plus size={18}/> Agregar opción</button></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] border-collapse bg-white text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wide text-black/50"><th className="p-3">Talla</th><th className="p-3">Color</th><th className="p-3">Stock</th><th className="p-3">Disponible</th><th className="p-3">Eliminar</th></tr></thead><tbody>{(editing.variants||[]).map(variant=><tr key={variant.id} className="border-b last:border-0"><td className="p-2"><input className="field" placeholder="S, M, L..." value={variant.size} onChange={e=>patchVariant(variant.id,{size:e.target.value})}/></td><td className="p-2"><input className="field" placeholder="Negro, Blanco..." value={variant.color} onChange={e=>patchVariant(variant.id,{color:e.target.value})}/></td><td className="p-2"><input className="field" type="number" min="0" value={variant.stock} onChange={e=>patchVariant(variant.id,{stock:Math.max(0,Number(e.target.value))})}/></td><td className="p-2 text-center"><input type="checkbox" checked={variant.active} onChange={e=>patchVariant(variant.id,{active:e.target.checked})}/></td><td className="p-2"><button title="Eliminar opción" onClick={()=>removeVariant(variant.id)} className="border border-red-700 p-2 text-red-700"><Trash2 size={16}/></button></td></tr>)}</tbody></table></div></div>
+      <button onClick={persist} className="mt-6 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 font-black uppercase text-white"><Save/> {editing.active?'Guardar y publicar':'Guardar borrador'}</button>
+    </div></div>}
+  </div></div>;
 }
