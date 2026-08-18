@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Check, CreditCard, ExternalLink, Facebook, Instagram, Menu, MessageCircle, Minus, Plus, Search, Share2, ShieldCheck, ShoppingBag, Trash2, X } from 'lucide-react';
+import { ArrowUpRight, Check, CreditCard, Facebook, Instagram, Menu, MessageCircle, Minus, Plus, Search, Share2, ShieldCheck, ShoppingBag, Trash2, X } from 'lucide-react';
 import { createMercadoPagoCheckout, createOrder } from './store';
 import { loadPublicProducts } from './publicCatalog';
 import { loadStoreSettings, trackEvent, type StoreSettings } from './storefrontExtras';
@@ -29,19 +29,56 @@ export default function App(){
   useEffect(()=>{Promise.all([reloadCatalog(),loadStoreSettings().then(setSocial)]).finally(()=>setLoading(false))},[]);
   useEffect(()=>localStorage.setItem('mateos-cart',JSON.stringify(cart)),[cart]);
   useEffect(()=>{if(!products.length||selected)return;const id=new URLSearchParams(location.search).get('product');const product=products.find(p=>p.id===id);if(product)openProduct(product,false)},[products]);
+  useEffect(()=>{
+    const overlayOpen=Boolean(cartOpen||checkout||selected||admin||menu);
+    document.body.classList.toggle('mateos-shop-overlay-open',overlayOpen);
+    return()=>document.body.classList.remove('mateos-shop-overlay-open');
+  },[cartOpen,checkout,selected,admin,menu]);
 
   const filtered=useMemo(()=>products.filter(p=>(category==='Todos'||p.category===category)&&(!query.trim()||`${p.name} ${p.category} ${p.collection}`.toLowerCase().includes(query.toLowerCase()))),[products,category,query]);
   const total=cart.reduce((s,i)=>s+i.price*i.quantity,0),count=cart.reduce((s,i)=>s+i.quantity,0);
-  const selectedVariants=useMemo(()=>selected?.variants?.filter(v=>v.active&&v.stock>0)||[],[selected]);
-  const availableSizes=useMemo(()=>[...new Set(selectedVariants.map(v=>v.size))],[selectedVariants]);
-  const availableColors=useMemo(()=>[...new Set(selectedVariants.filter(v=>!size||v.size===size).map(v=>v.color))],[selectedVariants,size]);
-  const selectedVariant=useMemo(()=>selectedVariants.find(v=>v.size===size&&v.color===color)||null,[selectedVariants,size,color]);
+
+  const allVariants=useMemo(()=>selected?.variants?.filter(v=>v.active)||[],[selected]);
+  const availableVariants=useMemo(()=>allVariants.filter(v=>v.stock>0),[allVariants]);
+  const availableColors=useMemo(()=>[...new Set(availableVariants.map(v=>v.color))],[availableVariants]);
+  const allSizes=useMemo(()=>[...new Set(allVariants.map(v=>v.size))],[allVariants]);
+  const availableSizesForColor=useMemo(()=>new Set(availableVariants.filter(v=>v.color===color).map(v=>v.size)),[availableVariants,color]);
+  const selectedVariant=useMemo(()=>availableVariants.find(v=>v.size===size&&v.color===color)||null,[availableVariants,size,color]);
   const selectedImages=useMemo(()=>{if(!selected)return[];const byColor=color?selected.color_images?.[color]:undefined;const base=byColor?.length?byColor:selected.images?.length?selected.images:selected.image?[selected.image]:[];return[...new Set(base.filter(Boolean))]},[selected,color]);
 
-  const openProduct=(p:Product,track=true)=>{setSelected(p);const first=(p.variants||[]).find(v=>v.active&&v.stock>0);setSize(first?.size||p.sizes[0]||'Única');setColor(first?.color||p.colors[0]||'Único');setPhotoIndex(0);const url=new URL(location.href);url.searchParams.set('product',p.id);history.replaceState({},'',url);if(track)void trackEvent('product_view',p.id,{name:p.name})};
+  const openProduct=(p:Product,track=true)=>{
+    setSelected(p);
+    const first=(p.variants||[]).find(v=>v.active&&v.stock>0);
+    setColor(first?.color||p.colors[0]||'Único');
+    setSize(first?.size||p.sizes[0]||'Única');
+    setPhotoIndex(0);
+    const url=new URL(location.href);url.searchParams.set('product',p.id);history.replaceState({},'',url);
+    if(track)void trackEvent('product_view',p.id,{name:p.name});
+  };
   const closeProduct=()=>{setSelected(null);const url=new URL(location.href);url.searchParams.delete('product');history.replaceState({},'',url)};
-  useEffect(()=>{if(selected&&availableColors.length&&!availableColors.includes(color)){setColor(availableColors[0]);setPhotoIndex(0)}},[size,selected,availableColors,color]);
+  useEffect(()=>{
+    if(!selected)return;
+    if(availableColors.length&&!availableColors.includes(color)){
+      const nextColor=availableColors[0];
+      setColor(nextColor);
+      const firstSize=availableVariants.find(v=>v.color===nextColor)?.size;
+      if(firstSize)setSize(firstSize);
+      setPhotoIndex(0);
+      return;
+    }
+    if(color&&!availableSizesForColor.has(size)){
+      const firstSize=availableVariants.find(v=>v.color===color)?.size;
+      if(firstSize)setSize(firstSize);
+    }
+  },[selected,color,size,availableColors,availableVariants,availableSizesForColor]);
   useEffect(()=>{const title=selected?`${selected.name} | Mateo’s Perú`:'Mateo’s Perú | Moda deportiva y urbana';const description=selected?(selected.description||`${selected.name} en Mateo’s Perú`):'Moda deportiva, workout, urbana y confort con envíos desde Arequipa a todo el Perú.';const image=selected?(selectedImages[0]||selected.image):'';document.title=title;setMeta('meta[name="description"]',{name:'description',content:description});setMeta('meta[property="og:title"]',{property:'og:title',content:title});setMeta('meta[property="og:description"]',{property:'og:description',content:description});setMeta('meta[property="og:type"]',{property:'og:type',content:selected?'product':'website'});setMeta('meta[property="og:url"]',{property:'og:url',content:location.href});if(image)setMeta('meta[property="og:image"]',{property:'og:image',content:image})},[selected,selectedImages]);
+
+  const chooseColor=(nextColor:string)=>{
+    setColor(nextColor);
+    const firstSize=availableVariants.find(v=>v.color===nextColor)?.size||'';
+    if(firstSize)setSize(firstSize);
+    setPhotoIndex(0);
+  };
 
   const add=()=>{if(!selected||!selectedVariant){setNotice('Esta combinación no tiene stock.');return;}setCart(c=>{const i=c.findIndex(x=>x.id===selected.id&&x.size===size&&x.color===color);if(i>=0&&c[i].quantity>=selectedVariant.stock){setNotice(`Solo quedan ${selectedVariant.stock} unidad(es).`);return c}return i>=0?c.map((x,n)=>n===i?{...x,quantity:x.quantity+1}:x):[...c,{...selected,image:selectedImages[0]||selected.image,size,color,quantity:1}]});void trackEvent('add_to_cart',selected.id,{size,color});closeProduct();setCartOpen(true)};
   const availableForCart=(item:CartItem)=>products.find(p=>p.id===item.id)?.variants?.find(v=>v.active&&v.size===item.size&&v.color===item.color)?.stock||0;
@@ -52,7 +89,13 @@ export default function App(){
   const startCheckout=()=>{setCartOpen(false);setCheckout(true);void trackEvent('checkout_start',null,{items:count,total})};
   const submitWhatsApp=async()=>{if(!valid()){setNotice('Completa los datos obligatorios según el método de entrega.');return;}setProcessing(true);try{const f=normalizedForm();const order=await createOrder(f,cart,total);const lines=cart.map(i=>`• ${i.name} | ${i.size} | ${i.color} | x${i.quantity} — ${money(i.price*i.quantity)}`).join('\n');const delivery=f.shipping==='Recojo coordinado'?'Recojo coordinado':f.shipping==='Delivery en Arequipa'?`Delivery: ${f.district} · ${f.address}${f.reference?` · Ref: ${f.reference}`:''}`:`Destino: ${f.department}, ${f.province}, ${f.district}${f.agency?` · Agencia: ${f.agency}`:''}`;const msg=`Hola, Mateo’s. Quiero confirmar mi pedido ${order.code}.\n\n${lines}\n\nTotal confirmado: ${money(order.total)}\n${delivery}\nCliente: ${f.name}\nCelular: ${f.phone}${f.notes?`\nNotas: ${f.notes}`:''}`;void trackEvent('whatsapp_order',null,{order:order.code,total:order.total});window.open(`https://wa.me/51945961792?text=${encodeURIComponent(msg)}`,'_blank','noopener,noreferrer');setCart([]);setCheckout(false);setNotice(`Pedido ${order.code} registrado.`)}catch(e:any){setNotice(e?.message||'No se pudo registrar el pedido.')}finally{setProcessing(false)}};
   const submitOnline=async()=>{if(!valid()){setNotice('Completa los datos obligatorios.');return}if(!form.email){setNotice('Para pagar online necesitamos tu correo.');return}setProcessing(true);try{const f=normalizedForm();const order=await createOrder(f,cart,total);const payment=await createMercadoPagoCheckout(order,f.email!);sessionStorage.setItem('mateos-last-order',order.code);location.assign(payment.url)}catch(e:any){setNotice(e?.message||'El pago online todavía no está disponible. Puedes pedir por WhatsApp.');setProcessing(false)}};
-  const productWhatsApp=()=>{if(!selected)return;const msg=`Hola Mateo’s, quisiera información sobre ${selected.name}${size?`, talla ${size}`:''}${color?`, color ${color}`:''}. ¿Está disponible?`;window.open(`https://wa.me/51945961792?text=${encodeURIComponent(msg)}`,'_blank','noopener,noreferrer')};
+  const productWhatsApp=()=>{
+    if(!selected)return;
+    const combo=selectedVariant?`Color: ${color}\nTalla: ${size}\nDisponibilidad mostrada: ${selectedVariant.stock} unidad(es)`:`Color: ${color||'Por elegir'}\nTalla: ${size||'Por elegir'}`;
+    const msg=`Hola Mateo’s, quiero consultar/pedir este producto:\n\n${selected.name}\n${combo}\nPrecio: ${money(selected.price)}\nEnlace: ${location.href}\n\n¿Me confirman disponibilidad para hacer el pedido?`;
+    void trackEvent('product_whatsapp',selected.id,{color,size});
+    window.open(`https://wa.me/51945961792?text=${encodeURIComponent(msg)}`,'_blank','noopener,noreferrer');
+  };
   const shareProduct=async()=>{if(!selected)return;const data={title:selected.name,text:`Mira ${selected.name} en Mateo’s Perú`,url:location.href};try{if(navigator.share)await navigator.share(data);else{await navigator.clipboard.writeText(location.href);setNotice('Enlace del producto copiado.')}}catch{}};
 
   return <div className="min-h-screen bg-[#f4f2ed] pb-20 text-[#101010] sm:pb-0">
@@ -64,7 +107,14 @@ export default function App(){
 
     <footer className="bg-[#c9ff36] px-5 py-10 lg:px-10"><div className="mx-auto flex max-w-[1440px] flex-col justify-between gap-7 md:flex-row"><div><Brand/><p className="mt-4 max-w-md text-sm">Moda deportiva y confort para toda la familia. Envíos desde Arequipa.</p></div><div className="space-y-3"><a href={`https://wa.me/51945961792?text=${encodeURIComponent('Hola Mateo’s, quisiera información sobre sus productos.')}`} target="_blank" rel="noreferrer" className="block font-bold">+51 945 961 792</a><div className="flex gap-3">{social.instagram_url&&<a href={social.instagram_url} target="_blank" rel="noreferrer" aria-label="Instagram"><Instagram/></a>}{social.facebook_url&&<a href={social.facebook_url} target="_blank" rel="noreferrer" aria-label="Facebook"><Facebook/></a>}{social.tiktok_url&&<a href={social.tiktok_url} target="_blank" rel="noreferrer" aria-label="TikTok" className="font-black">TikTok</a>}</div><button onClick={()=>setAdmin(true)} className="flex items-center gap-2 text-sm font-bold"><ShieldCheck size={18}/> Administrar tienda</button></div></div></footer>
 
-    {selected&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-2 sm:grid sm:place-items-center sm:p-4"><div className="my-2 grid w-full max-w-5xl bg-[#f4f2ed] md:grid-cols-2"><div className="p-3 sm:p-4"><div className="aspect-[3/4] overflow-hidden bg-[#ddd9d0]"><img src={selectedImages[photoIndex]||selected.image||selected.images[0]} alt={selected.name} className="h-full w-full object-cover"/></div>{selectedImages.length>1&&<div className="mt-2 grid grid-cols-5 gap-2">{selectedImages.map((url,index)=><button key={`${url}-${index}`} onClick={()=>setPhotoIndex(index)} className={`aspect-square overflow-hidden border-2 ${photoIndex===index?'border-black':'border-transparent'}`}><img src={url} alt="" className="h-full w-full object-cover"/></button>)}</div>}</div><div className="relative p-5 sm:p-7"><button className="absolute right-4 top-4" onClick={closeProduct}><X/></button><p className="pr-10 text-xs font-bold uppercase text-black/45">{selected.category} · {selected.collection}</p><h3 className="mt-2 pr-8 font-display text-4xl sm:text-5xl">{selected.name}</h3><div className="mt-3 flex items-center gap-3"><p className="text-2xl font-black">{money(selected.price)}</p>{selected.old_price&&selected.old_price>selected.price&&<><p className="text-sm text-black/40 line-through">{money(selected.old_price)}</p><span className="bg-[#c9ff36] px-2 py-1 text-xs font-black">-{discountPct(selected)}%</span></>}</div><p className="mt-4 text-sm text-black/60">{selected.description}</p><p className="mt-5 text-xs font-black uppercase">Talla</p><div className="mt-2 flex flex-wrap gap-2">{availableSizes.map(s=><button key={s} onClick={()=>{setSize(s);setPhotoIndex(0)}} className={`border px-4 py-2 ${size===s?'bg-black text-white':'bg-white'}`}>{s}</button>)}</div><p className="mt-5 text-xs font-black uppercase">Color</p><div className="mt-2 flex flex-wrap gap-2">{availableColors.map(c=><button key={c} onClick={()=>{setColor(c);setPhotoIndex(0)}} className={`border px-4 py-2 ${color===c?'bg-black text-white':'bg-white'}`}>{c}</button>)}</div>{selectedVariant&&<p className="mt-3 text-xs font-bold text-black/50">Disponibles: {selectedVariant.stock}</p>}<div className="mt-6 grid gap-2"><button onClick={add} disabled={!selectedVariant} className="w-full bg-black px-5 py-4 font-black uppercase text-white disabled:opacity-30">{selectedVariant?'Agregar al carrito':'Agotado'}</button><div className="grid grid-cols-2 gap-2"><button onClick={productWhatsApp} className="flex items-center justify-center gap-2 bg-[#25D366] px-3 py-3 text-xs font-black uppercase"><MessageCircle size={17}/>Consultar</button><button onClick={shareProduct} className="flex items-center justify-center gap-2 border border-black px-3 py-3 text-xs font-black uppercase"><Share2 size={17}/>Compartir</button></div></div></div></div></div>}
+    {selected&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/65 p-2 sm:grid sm:place-items-center sm:p-4"><div className="my-2 grid w-full max-w-5xl bg-[#f4f2ed] md:grid-cols-2"><div className="p-3 sm:p-4"><div className="aspect-[3/4] overflow-hidden bg-[#ddd9d0]"><img src={selectedImages[photoIndex]||selected.image||selected.images[0]} alt={selected.name} className="h-full w-full object-cover"/></div>{selectedImages.length>1&&<div className="mt-2 grid grid-cols-5 gap-2">{selectedImages.map((url,index)=><button key={`${url}-${index}`} onClick={()=>setPhotoIndex(index)} className={`aspect-square overflow-hidden border-2 ${photoIndex===index?'border-black':'border-transparent'}`}><img src={url} alt="" className="h-full w-full object-cover"/></button>)}</div>}</div><div className="relative p-5 sm:p-7"><button className="absolute right-4 top-4" onClick={closeProduct}><X/></button><p className="pr-10 text-xs font-bold uppercase text-black/45">{selected.category} · {selected.collection}</p><h3 className="mt-2 pr-8 font-display text-4xl sm:text-5xl">{selected.name}</h3><div className="mt-3 flex items-center gap-3"><p className="text-2xl font-black">{money(selected.price)}</p>{selected.old_price&&selected.old_price>selected.price&&<><p className="text-sm text-black/40 line-through">{money(selected.old_price)}</p><span className="bg-[#c9ff36] px-2 py-1 text-xs font-black">-{discountPct(selected)}%</span></>}</div><p className="mt-4 text-sm text-black/60">{selected.description}</p>
+
+      <div className="mt-6"><p className="text-xs font-black uppercase">Color: <span className="normal-case text-black/60">{color||'Selecciona un color'}</span></p><div className="mt-2 flex flex-wrap gap-2">{availableColors.map(c=>{const preview=selected.color_images?.[c]?.[0];return <button key={c} onClick={()=>chooseColor(c)} className={`overflow-hidden border-2 bg-white text-left ${color===c?'border-black':'border-black/15'}`}>{preview?<><img src={preview} alt={c} className="h-20 w-16 object-cover"/><span className="block max-w-16 truncate px-2 py-1.5 text-center text-[10px] font-bold">{c}</span></>:<span className="block px-4 py-3 text-xs font-bold">{c}</span>}</button>})}</div></div>
+
+      <div className="mt-5"><p className="text-xs font-black uppercase">Talla <span className="normal-case font-medium text-black/45">· disponibles para {color}</span></p><div className="mt-2 flex flex-wrap gap-2">{allSizes.map(s=>{const enabled=availableSizesForColor.has(s);return <button key={s} disabled={!enabled} onClick={()=>setSize(s)} className={`min-w-12 rounded-full border px-4 py-2 text-sm font-bold ${size===s&&enabled?'border-black bg-black text-white':enabled?'border-black/30 bg-white':'border-black/10 bg-transparent text-black/25 line-through'}`}>{s}</button>})}</div></div>
+
+      {selectedVariant?<div className="mt-4 flex items-center justify-between bg-white p-3 text-sm"><span><b>{color}</b> · Talla <b>{size}</b></span><span className="font-bold">{selectedVariant.stock} disponible{selectedVariant.stock===1?'':'s'}</span></div>:<p className="mt-4 bg-white p-3 text-sm font-bold text-red-700">Selecciona una combinación disponible.</p>}
+      <div className="mt-6 grid gap-2"><button onClick={add} disabled={!selectedVariant} className="w-full bg-black px-5 py-4 font-black uppercase text-white disabled:opacity-30">{selectedVariant?'Agregar al carrito':'Combinación no disponible'}</button><button onClick={productWhatsApp} className="flex w-full items-center justify-center gap-2 bg-[#25D366] px-3 py-3 text-xs font-black uppercase"><MessageCircle size={17}/> Pedir esta talla y color por WhatsApp</button><button onClick={shareProduct} className="flex w-full items-center justify-center gap-2 border border-black px-3 py-3 text-xs font-black uppercase"><Share2 size={17}/>Compartir producto</button></div></div></div></div>}
 
     <div className={`fixed inset-0 z-50 ${cartOpen?'':'pointer-events-none'}`}><div onClick={()=>setCartOpen(false)} className={`absolute inset-0 bg-black/55 transition ${cartOpen?'opacity-100':'opacity-0'}`}/><aside className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-[#f4f2ed] transition ${cartOpen?'translate-x-0':'translate-x-full'}`}><div className="flex items-center justify-between border-b p-5"><h3 className="font-display text-4xl">CARRITO ({count})</h3><button onClick={()=>setCartOpen(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-5">{cart.map((i,n)=>{const max=availableForCart(i);return <div key={`${i.id}-${i.size}-${i.color}`} className="mb-5 grid grid-cols-[72px_1fr] gap-3 border-b pb-5"><img src={i.image} alt={i.name} className="h-24 w-[72px] object-cover"/><div><div className="flex justify-between gap-2"><div><p className="text-sm font-black">{i.name}</p><p className="text-xs text-black/50">{i.size} · {i.color} · disp. {max}</p></div><button onClick={()=>setCart(c=>c.filter((_,x)=>x!==n))}><Trash2 size={16}/></button></div><div className="mt-3 flex items-center justify-between"><div className="flex border"><button className="p-2" onClick={()=>setCart(c=>c.flatMap((x,k)=>k===n?(x.quantity>1?[{...x,quantity:x.quantity-1}]:[]):[x]))}><Minus size={13}/></button><span className="p-2 text-xs font-black">{i.quantity}</span><button disabled={i.quantity>=max} className="p-2 disabled:opacity-25" onClick={()=>incrementCart(n)}><Plus size={13}/></button></div><b>{money(i.price*i.quantity)}</b></div>{max===0&&<p className="mt-2 text-xs font-bold text-red-700">Agotado. Retíralo para continuar.</p>}</div></div>})}{!cart.length&&<p className="text-sm text-black/50">Tu carrito está vacío.</p>}</div>{cart.length>0&&<div className="border-t bg-white p-5"><div className="mb-4 flex justify-between font-black"><span>Total estimado</span><span>{money(total)}</span></div><button disabled={cart.some(i=>availableForCart(i)<i.quantity)} onClick={startCheckout} className="w-full bg-black px-5 py-4 font-black uppercase text-white disabled:opacity-30">Continuar compra</button></div>}</aside></div>
 
